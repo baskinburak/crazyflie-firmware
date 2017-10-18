@@ -29,6 +29,7 @@
 /* FreeRtos includes */
 #include "FreeRTOS.h"
 #include "task.h"
+#include "semphr.h"
 
 #include "crtp.h"
 #include "position_external.h"
@@ -39,6 +40,8 @@
 #include "math3d.h"
 #include "packetdef.h"
 #include "quatcompress.h"
+#include "usec_time.h"
+#include "cf_status.h"
 
 
 // Global variables
@@ -62,6 +65,9 @@ static float v_y;
 static float v_z;
 static uint16_t dt;
 
+xSemaphoreHandle flockLock;
+struct cf_status flockstatus[0xff];
+
 // #define MEASURE_PACKET_DROPS
 #ifdef MEASURE_PACKET_DROPS
 static uint32_t packet_drop_counts[10];
@@ -78,6 +84,19 @@ void positionExternalInit(void)
   if(isInit) {
     return;
   }
+
+  flockLock = xSemaphoreCreateMutex();
+
+
+  xSemaphoreTake(flockLock, portMAX_DELAY);
+
+  for(int i = 0; i<0xff; i++) {
+    flockstatus[i].position = flockstatus[i].linear_velocity = mkvec(0.0, 0.0, 0.0);
+    flockstatus[i].orientation = qeye();
+    flockstatus[i].last_time = 0;
+  }
+
+  xSemaphoreGive(flockLock);
 
   crtpInit();
   crtpRegisterPortCB(CRTP_PORT_POSEXT, positionExternalCrtpCB);
@@ -129,6 +148,10 @@ void setPositionInteractiveCallback(positionInteractiveCallback cb)
 {
   interactiveCallback = cb;
 }
+
+void positionExternal_get_my_status(struct cf_status* stat) {
+  *stat = flockstatus[my_id];
+} 
 
 static void positionExternalCrtpCB(CRTPPacket* pk)
 {
@@ -192,6 +215,38 @@ static void positionExternalCrtpCB(CRTPPacket* pk)
       struct quat quat = qloadf(q);
 
       (*interactiveCallback)(&pos, &quat);
+    }
+
+    // calculate mine as well
+    if(d->pose[i].id != INTERACTIVE_ID) {
+      float x = position_fix24_to_float(d->pose[i].x);
+      float y = position_fix24_to_float(d->pose[i].y);
+      float z = position_fix24_to_float(d->pose[i].z);
+
+      uint8_t bid = d->pose[i].id;
+
+
+      xSemaphoreTake(flockLock, portMAX_DELAY);
+      if(flockstatus[bid].last_time != 0) {
+        float dt = usecTimestamp() / 1e6 - flockstatus[bid].last_time;
+        dt = fmax(dt, 0.005);
+        flockstatus[bid].linear_velocity.x = (x - flockstatus[bid].position.x) / dt;
+        flockstatus[bid].linear_velocity.y = (y - flockstatus[bid].position.y) / dt;
+        flockstatus[bid].linear_velocity.z = (z - flockstatus[bid].position.z) / dt;
+      }
+
+      flockstatus[bid].position.x = x;
+      flockstatus[bid].position.y = y;
+      flockstatus[bid].position.z = z;
+
+      float q[4];
+      quatdecompress(d->pose[i].quat, q);
+      flockstatus[bid].orientation = qloadf(q);
+
+      flockstatus[bid].last_time = usecTimestamp() / 1e6f;
+
+      flockstatus[bid].id = bid;
+      xSemaphoreGive(flockLock);
     }
   }
 #endif

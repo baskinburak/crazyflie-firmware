@@ -123,6 +123,7 @@ enum TrajectoryCommand_e {
   COMMAND_START_CANNED_TRAJECTORY = 9,
   COMMAND_START_AVOID_TARGET      = 10,
   COMMAND_SET_GROUP               = 11,
+  COMMAND_START_BOIDS             = 12,
 };
 
 // multi-packet piecewise polynomial definition
@@ -201,5 +202,13 @@ struct data_start_avoid_target {
 struct data_set_group {
   uint8_t group;
 } __attribute__((packed));
+
+struct data_start_boids {
+  uint8_t id; // uav id
+  uint8_t type; //0: follow the flock, 1: be a leader try to go to destination given below
+  float x;
+  float y;
+  float z;
+};
 
 #endif // ifndef SWIG

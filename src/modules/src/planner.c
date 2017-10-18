@@ -121,6 +121,9 @@ struct traj_eval plan_current_goal(struct planner *p, float t)
 			else {
 				return piecewise_eval(p->ppFront, t, p->mass);
 			}
+  
+    case TRAJECTORY_STATE_BOIDS:
+      return eval_boids(&p->boids, t);
 
 		default:
 			return traj_eval_invalid();
@@ -252,3 +255,11 @@ void plan_update_avoid_target(struct planner *p, struct vec target_pos, float t)
 {
 	update_avoid_target(&p->avoid, target_pos, t);
 }
+
+void plan_start_boids(struct planner* p, int i, int t, struct vec dst, struct cf_status* cfs) { // i id, t type, dst destination in case type is a leader
+  p->state = TRAJECTORY_STATE_BOIDS;
+  init_boids(&p->boids, i, t, dst, cfs);
+}
+
+
+

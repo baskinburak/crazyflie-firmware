@@ -42,10 +42,12 @@
 #include "position_external.h"
 #include "packetdef.h"
 #include "planner.h"
+#include "boids.h"
 #include "usec_time.h"
 #include "log.h"
 #include "stabilizer.h" // to get current state estimate
 #include "num.h"
+#include "cf_status.h"
 
 
 // Global variables
@@ -73,6 +75,7 @@ static int set_ellipse(const struct data_set_ellipse* data);
 static int start_canned_trajectory(const struct data_start_canned_trajectory* data);
 static int start_avoid_target(const struct data_start_avoid_target* data);
 static int set_group(const struct data_set_group* data);
+static int start_boids(const struct data_start_boids* data);
 
 static void posInteractiveCB(const struct vec *pos, const struct quat *quat)
 {
@@ -82,6 +85,8 @@ static void posInteractiveCB(const struct vec *pos, const struct quat *quat)
 
 // hack using global
 extern float g_vehicleMass;
+
+extern struct cf_status flockstatus[0xff];
 
 static struct vec mkvec_position_fix16_to_float(posFixed16_t x, posFixed16_t y, posFixed16_t z)
 {
@@ -221,6 +226,10 @@ void trajectoryTask(void * prm)
       case COMMAND_SET_GROUP:
         ret = set_group((const struct data_set_group*)&p.data[1]);
         break;
+      case COMMAND_START_BOIDS:
+        ret = start_boids((const struct data_start_boids*)&p.data[1]);
+        break;
+      
       default:
         ret = ENOEXEC;
         break;
@@ -368,6 +377,19 @@ int start_avoid_target(const struct data_start_avoid_target* data)
 int set_group(const struct data_set_group* data)
 {
   group = data->group;
+
+  return 0;
+}
+
+int start_boids(const struct data_start_boids* data) {
+  struct vec dest;
+  if(data->type == 1) {
+    dest = mkvec(data->x, data->y, data->z);
+  }
+
+  xSemaphoreTake(lockTraj, portMAX_DELAY);
+  plan_start_boids(&planner, data->id, data->type, dest, flockstatus);
+  xSemaphoreGive(lockTraj);
 
   return 0;
 }

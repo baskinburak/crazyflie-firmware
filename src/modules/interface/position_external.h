@@ -28,6 +28,7 @@
 
 #include <stdint.h>
 #include "math3d.h"
+#include "cf_status.h"
 
 void positionExternalInit(void);
 bool positionExternalTest(void);
@@ -51,5 +52,8 @@ extern bool positionExternalFresh;
 // position of the "interactive object" i.e. in "avoid human" demo
 typedef void (*positionInteractiveCallback)(struct vec const *, struct quat const *);
 void setPositionInteractiveCallback(positionInteractiveCallback cb);
+
+
+void positionExternal_get_my_status(struct cf_status* stat);
 
 #endif /* POSITION_EXTERNAL_H_ */

@@ -33,6 +33,8 @@
 #include "math3d.h"
 #include "packetdef.h"
 #include "pptraj.h"
+#include "boids.h"
+#include "cf_status.h"
 
 
 enum trajectory_state
@@ -44,7 +46,9 @@ enum trajectory_state
 	TRAJECTORY_STATE_ELLIPSE         = 4,
 	TRAJECTORY_STATE_ELLIPSE_CATCHUP = 5,
 	TRAJECTORY_STATE_AVOID_TARGET    = 6,
+  TRAJECTORY_STATE_BOIDS           = 7,
 };
+
 
 struct planner
 {
@@ -63,7 +67,11 @@ struct planner
 	struct vec home;
 
 	float mass;
+
+  struct boid_data boids;
 };
+
+
 
 // initialize the planner. pass in the vehicle mass in kilograms.
 void plan_init(struct planner *p, float mass);
@@ -120,3 +128,8 @@ void plan_start_avoid_target(
 
 // update the target's position while in "avoid target" mode.
 void plan_update_avoid_target(struct planner *p, struct vec target_pos, float t);
+
+// enter boids mode. if t = 1 you are a leader, try to go to dest; if t = 0, you are a follower, follow! i is uav id
+void plan_start_boids(struct planner* p, int i, int t, struct vec dest, struct cf_status* cfs);
+
+struct cf_status* get_cfstat_array(); // for sim
