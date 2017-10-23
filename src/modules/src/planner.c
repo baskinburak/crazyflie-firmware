@@ -201,7 +201,8 @@ int plan_land(struct planner *p, struct vec pos, float yaw, float height, float 
 {
 	// TODO this means we can't land from ELLIPSE or AVOID_TARGET
 	// states... you must GO_HOME first. Is this good?
-	if (p->state != TRAJECTORY_STATE_FLYING) {
+	if (p->state != TRAJECTORY_STATE_FLYING && 
+        p->state != TRAJECTORY_STATE_BOIDS) {
 		return 1;
 	}
 
@@ -216,7 +217,8 @@ int plan_hover(struct planner *p, struct vec hover_pos, float hover_yaw, float d
 {
 	if (p->state != TRAJECTORY_STATE_FLYING &&
 	    p->state != TRAJECTORY_STATE_ELLIPSE &&
-	    p->state != TRAJECTORY_STATE_AVOID_TARGET) {
+	    p->state != TRAJECTORY_STATE_AVOID_TARGET &&
+        p->state != TRAJECTORY_STATE_BOIDS) {
 		return 1;
 	}
 

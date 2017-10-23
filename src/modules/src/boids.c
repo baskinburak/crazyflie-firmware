@@ -24,6 +24,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "log.h"
+
 #define BOIDS_EPSILON 0.0000001
 #define BOIDS_COLAVD_SHIFT 0.4
 #define BOIDS_COLAVD_THRESH 0.05
@@ -40,12 +42,19 @@
 extern xSemaphoreHandle flockLock;
 #endif
 
+struct vec leaderDest;
+
 void init_boids(struct boid_data* data, int i, int t, struct vec dest, struct cf_status* cfs) {
 /*
 #ifdef CSSIM
   printf("init type: %d", t);
 #endif
 */
+
+  for(int i=0; i<0xff; i++) {
+    cfs[i].last_time = 0;
+  }
+
   data->role = t;
   if(data->role == BOIDS_LEADER)
     data->dest = dest;
@@ -318,6 +327,28 @@ static struct boid_suggestion empty_sgg(struct cf_status* flockstatus, struct cf
 }
 
 struct traj_eval eval_boids(struct boid_data *data, float t) {
+    /*struct traj_eval ev2;
+
+    struct cf_status* my_status2;
+
+    my_status2 = &data->cfs[data->my_id];
+
+	ev2.pos = my_status2->position;
+	ev2.vel = vzero();
+
+
+
+	ev2.acc = vzero();
+	ev2.yaw = 0;
+	ev2.omega = vzero();
+    
+
+
+    return ev2;*/
+
+
+
+
 
 
 	struct boid_suggestion (*colavd)(struct cf_status*, struct cf_status*);
@@ -340,13 +371,19 @@ struct traj_eval eval_boids(struct boid_data *data, float t) {
 	ev.omega = vzero();
   */
 
-  for(int i=0; i<0xff; i++) {
+
+
+#ifndef CSSIM
+  xSemaphoreTake(flockLock, portMAX_DELAY);
+#endif
+
+ /* for(int i=0; i<0xff; i++) {
     if(data->cfs[i].last_time != 0) {
       float dt = t - data->cfs[i].last_time;
       (data->cfs[i]).position = vadd((data->cfs[i]).position, vscl(dt, (data->cfs[i]).linear_velocity));
       data->cfs[i].last_time = t;
     }
-  }
+  }*/
 
   struct cf_status* my_status;
   struct traj_eval trj;
@@ -370,10 +407,6 @@ struct traj_eval eval_boids(struct boid_data *data, float t) {
 
 
 
-
-#ifndef CSSIM
-  xSemaphoreTake(flockLock, portMAX_DELAY);
-#endif
 
 
   my_status = &data->cfs[data->my_id];
@@ -421,6 +454,7 @@ struct traj_eval eval_boids(struct boid_data *data, float t) {
 
 
   if(data->role == BOIDS_LEADER) {
+    leaderDest = data->dest;
     sgg = (*gofn)(data, my_status);
     trj.vel = vadd(trj.vel, vscl(go_imp * sgg.importance, sgg.vel));
 
@@ -441,6 +475,7 @@ struct traj_eval eval_boids(struct boid_data *data, float t) {
 		printf(" !!!!!!!!!!!!!!!!!!!! \n");
 	} else printf("\n");
 #endif
+
 #ifndef CSSIM
   xSemaphoreGive(flockLock);
 #endif
@@ -482,7 +517,7 @@ struct traj_eval eval_boids(struct boid_data *data, float t) {
 #endif
 */
   //trj.vel = vnormalise(trj.vel);
-  trj.pos = my_status->position;
+  trj.pos = vadd(my_status->position, vscl(1/500.0, trj.vel));
   trj.acc = vzero();
   trj.yaw = 0;
   trj.omega = vzero();
@@ -493,3 +528,11 @@ struct traj_eval eval_boids(struct boid_data *data, float t) {
 */
   return trj;
 }
+
+#ifndef CSSIM
+LOG_GROUP_START(boids)
+LOG_ADD(LOG_FLOAT, leaderX, &leaderDest.x)
+LOG_ADD(LOG_FLOAT, leaderY, &leaderDest.y)
+LOG_ADD(LOG_FLOAT, leaderZ, &leaderDest.z)
+LOG_GROUP_STOP(boids)
+#endif

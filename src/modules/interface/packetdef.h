@@ -209,6 +209,6 @@ struct data_start_boids {
   float x;
   float y;
   float z;
-};
+} __attribute__((packed));
 
 #endif // ifndef SWIG
