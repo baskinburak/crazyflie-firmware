@@ -335,6 +335,7 @@ int ff_del_syncobj (_SYNC_t sobj);				/* Delete a sync object */
 #define	FA_OPEN_ALWAYS		0x10
 #define	FA_OPEN_APPEND		0x30
 
+
 /* Fast seek controls (2nd argument of f_lseek) */
 #define CREATE_LINKMAP	((FSIZE_t)0 - 1)
 

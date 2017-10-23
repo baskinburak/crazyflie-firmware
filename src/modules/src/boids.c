@@ -26,8 +26,15 @@
 
 #define BOIDS_EPSILON 0.0000001
 #define BOIDS_COLAVD_SHIFT 0.4
-#define BOIDS_COLAVD_THRESH 0.02
-#define BOIDS_COLAVD_CLAMP 0.00001
+#define BOIDS_COLAVD_THRESH 0.05
+#define BOIDS_COLAVD_CLAMP 0.002
+
+#define BOIDS_XMAX 2.5
+#define BOIDS_XMIN -2.5
+#define BOIDS_YMAX 2.5
+#define BOIDS_YMIN -2.5
+#define BOIDS_ZMAX 2
+#define BOIDS_ZMIN 0.5
 
 #ifndef CSSIM
 extern xSemaphoreHandle flockLock;
@@ -86,13 +93,49 @@ static struct boid_suggestion collision_avoidance_anticipate(struct cf_status* f
   return sgg;
 }
 
+/*tries to keep certain distance from closest flockmate */
+
+static struct boid_suggestion collision_avoidance_closest_distance(struct cf_status* flockstatus, struct cf_status* my_status) {
+  struct boid_suggestion sgg;
+  sgg.importance = 0;
+  sgg.vel = vzero();
+
+  float neigh_thresh = 1;
+
+  float closest_dist = 1e10;
+
+  neigh_thresh = neigh_thresh * neigh_thresh;
+
+  for(int i=0; i<0xff; i++) {
+		if(flockstatus[i].id != my_status->id && flockstatus[i].last_time != 0) {
+			float dist;
+			if((dist = vdist2(my_status->position, flockstatus[i].position)) < neigh_thresh) {
+				dist = sqrt(dist);
+        if(dist < closest_dist) {
+				  struct vec p = vsub(flockstatus[i].position, my_status->position);
+          float dotp;
+          if((dotp = vdot(p, my_status->linear_velocity)) > BOIDS_EPSILON) {
+					  closest_dist = dist;
+            sgg.vel = vnormalize(vcross(p, vcross(my_status->linear_velocity, p)));
+            sgg.importance = 1 / closest_dist;
+				  }
+        }
+			}
+		}
+	}
+
+  return sgg; 
+}
+
+
 /* tries to keep certain distance from flockmates*/
 static struct boid_suggestion collision_avoidance_distance(struct cf_status* flockstatus, struct cf_status* my_status) {
 	struct boid_suggestion sgg;
 	sgg.importance = 0;
 	sgg.vel = vzero();
-	float neigh_thresh = 10;// meters
+	float neigh_thresh = 1;// meters
 
+	float total_dist = 0;
 	float closest_dist = 1e10;
 
 	float w = 0;
@@ -107,19 +150,21 @@ static struct boid_suggestion collision_avoidance_distance(struct cf_status* flo
 			if((dist = vdist2(my_status->position, flockstatus[i].position)) < neigh_thresh) {
 				dist = sqrt(dist);
 				closest_dist = fmin(closest_dist, dist);
+				float weight;
 				if(dist < BOIDS_COLAVD_SHIFT + BOIDS_COLAVD_THRESH) {
-					dist = 1/(BOIDS_COLAVD_CLAMP*BOIDS_COLAVD_CLAMP);
+					weight = 1/(BOIDS_COLAVD_CLAMP*BOIDS_COLAVD_CLAMP);
 				} else {
-					dist = 1/((dist-BOIDS_COLAVD_SHIFT)*(dist-BOIDS_COLAVD_SHIFT));
+					weight = 1/((dist-BOIDS_COLAVD_SHIFT)*(dist-BOIDS_COLAVD_SHIFT));
 				}
 				struct vec p = vsub(flockstatus[i].position, my_status->position);
 				float dotp;
 				if((dotp = vdot(p, my_status->linear_velocity)) > BOIDS_EPSILON) {
+					total_dist += dist;
 					fcount++;
 					struct vec l = vnormalize(vcross(p, vcross(my_status->linear_velocity, p)));
 					
-					sgg.vel = vadd(sgg.vel, vscl(dist, l)); 
-					w += dist;
+					sgg.vel = vadd(sgg.vel, vscl(weight, l)); 
+					w += weight;
 				}
 			}
 		}
@@ -127,7 +172,8 @@ static struct boid_suggestion collision_avoidance_distance(struct cf_status* flo
 
 	if(fcount > 0) {
 		sgg.vel = vdiv(sgg.vel, w);
-		sgg.importance = 1/closest_dist;
+		sgg.importance = 1 / (closest_dist);
+		//sgg.importance = total_dist / fcount;
 	}
 /*
 #ifdef CSSIM
@@ -178,7 +224,7 @@ static struct boid_suggestion flock_centering(struct cf_status* flockstatus, str
   sgg.importance = 0;
   sgg.vel = vzero();
 
-  float neigh_thresh = 100; // meters
+  float neigh_thresh = 1.5; // meters
 
   float w = 0;
 
@@ -211,7 +257,7 @@ static struct boid_suggestion velocity_matching(struct cf_status* flockstatus, s
   sgg.importance = 0;
   sgg.vel = vzero();
 
-  float neigh_thresh = 7;
+  float neigh_thresh = 1;
   neigh_thresh = neigh_thresh * neigh_thresh;
 
   int fcount = 0;
@@ -229,7 +275,7 @@ static struct boid_suggestion velocity_matching(struct cf_status* flockstatus, s
   if(fcount != 0) {
     sgg.vel = vdiv(sgg.vel, fcount);
     float sggmag = vmag(sgg.vel), mymag = vmag(my_status->linear_velocity);
-    if(mymag > BOIDS_EPSILON || sggmag > BOIDS_EPSILON)
+    if(mymag < BOIDS_EPSILON || sggmag < BOIDS_EPSILON)
       sgg.importance = 1;
     else {
       sgg.importance = fabs(sggmag - mymag) * vmag(vcross(sgg.vel, my_status->linear_velocity)) / (sggmag * mymag);
@@ -280,7 +326,7 @@ struct traj_eval eval_boids(struct boid_data *data, float t) {
 	struct boid_suggestion (*gofn)(struct boid_data*, struct cf_status*);
 
 
-	colavd = &collision_avoidance_distance;
+	colavd = &collision_avoidance_closest_distance;
 	velmat = &velocity_matching;
 	flocen = &flock_centering;
 	gofn = &boid_go;
@@ -304,10 +350,20 @@ struct traj_eval eval_boids(struct boid_data *data, float t) {
 
   struct cf_status* my_status;
   struct traj_eval trj;
-  float ca_imp = 0.3;
-  float fc_imp = 0.095;
-  float vm_imp = 0.065;
-  float go_imp = 0.2;
+
+  /*
+  // collision_avoidance_distance
+  float ca_imp = 0.076;
+  float fc_imp = 0.06;
+  float vm_imp = 0.025;
+  float go_imp = 0.035;
+  */
+
+  // collision_avoidance_closest_distance
+  float ca_imp = 0.096;
+  float fc_imp = 0.06;
+  float vm_imp = 0.025;
+  float go_imp = 0.035;
 
 
   struct boid_suggestion sgg;
@@ -340,22 +396,82 @@ struct traj_eval eval_boids(struct boid_data *data, float t) {
   sgg = (*colavd)(data->cfs, my_status);
   trj.vel = vscl(ca_imp * sgg.importance, sgg.vel);
 
+
+#ifdef CSSIM
+	printf("ca> %f %f %f %f, ", sgg.vel.x, sgg.vel.y, sgg.vel.z, sgg.importance);
+#endif
+
+
   sgg = (*flocen)(data->cfs, my_status);
   trj.vel = vadd(trj.vel, vscl(fc_imp * sgg.importance, sgg.vel));
+
+
+#ifdef CSSIM
+	printf("fc> %f %f %f %f, ", sgg.vel.x, sgg.vel.y, sgg.vel.z, sgg.importance);
+#endif
+
 
   sgg = (*velmat)(data->cfs, my_status);
   trj.vel = vadd(trj.vel, vscl(vm_imp * sgg.importance, sgg.vel));
 
+
+#ifdef CSSIM
+	printf("vm> %f %f %f %f, ", sgg.vel.x, sgg.vel.y, sgg.vel.z, sgg.importance);
+#endif
+
+
   if(data->role == BOIDS_LEADER) {
     sgg = (*gofn)(data, my_status);
     trj.vel = vadd(trj.vel, vscl(go_imp * sgg.importance, sgg.vel));
+
+
+#ifdef CSSIM
+		printf("go> %f %f %f %f, ", sgg.vel.x, sgg.vel.y, sgg.vel.z, sgg.importance);
+#endif
+
+
   }
 
+#ifdef CSSIM
+	printf("result> %f %f %f", trj.vel.x, trj.vel.y, trj.vel.z);
+#endif
+
+#ifdef CSSIM
+	if(vmag(trj.vel) > 1.5) {
+		printf(" !!!!!!!!!!!!!!!!!!!! \n");
+	} else printf("\n");
+#endif
 #ifndef CSSIM
   xSemaphoreGive(flockLock);
 #endif
 
  
+
+
+  if(my_status->position.x - BOIDS_XMAX > 0 && trj.vel.x > 0) {
+    trj.vel.x = 0;
+  }
+
+  if(my_status->position.x - BOIDS_XMIN < 0 && trj.vel.x < 0) {
+    trj.vel.x = 0;
+  }
+
+  if(my_status->position.z - BOIDS_ZMAX > 0 && trj.vel.z > 0) {
+    trj.vel.z = 0;
+  }
+
+  if(my_status->position.z - BOIDS_ZMIN < 0 && trj.vel.z < 0) {
+    trj.vel.z = 0;
+  }
+
+  if(my_status->position.y - BOIDS_YMAX > 0 && trj.vel.y > 0) {
+    trj.vel.y = 0;
+  }
+
+  if(my_status->position.y - BOIDS_YMIN < 0 && trj.vel.y < 0) {
+    trj.vel.y = 0;
+  }
+
 
  /* if(vmag(trj.vel) > 1)
     trj.vel = vnormalize(trj.vel);*/
